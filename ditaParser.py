@@ -31,7 +31,7 @@ def unpickleData(path):
 
 def jsonSave(path,data):
     with open(path, 'wb') as fp:
-        json.dump(data, fp)
+        json.dump(unicode(data), fp)
 
 def jsonLoad(path,data):
     with open(path, 'rb') as fp:
@@ -55,19 +55,23 @@ def extractClassificationDataAllDirs(directory,singleFile,directoryPrefix):
     dictionaryTopics = {} #contains a mapping from name to integer (topic id)
     conrefReuse = {} #contains a mapping from integer (topic id) to integer (topic id)
     keyrefReuse = {} #contains a mapping from integer (topic id) to list of keywords
+    topicrefReuse = {} #contains a mapping from integer (topic id) to list of keywords
+    dictionaryOfElementsNotMatched = {} #contains a mapping from element names not matched to a count to see if there is something important that we are missing
+
     for dir in dirs:
         print "Extracting docs from " + dir
-        cont = extractClassificationData(directory + dir + '/',singleFile, cont, directoryPrefix, dictionaryTopics, conrefReuse, keyrefReuse)
+        cont = extractClassificationData(directory + dir + '/',singleFile, cont, directoryPrefix, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, dictionaryOfElementsNotMatched)
 
     for keyconref in conrefReuse:
         conrefReuse[keyconref] = dictionaryTopics[conrefReuse[keyconref]]
     jsonSave(directoryPrefix + 'conref',conrefReuse)
     jsonSave(directoryPrefix + 'keyref',keyrefReuse)
     jsonSave(directoryPrefix + 'topics',dictionaryTopics)
+    jsonSave(directoryPrefix + 'notMatchedElements',dictionaryOfElementsNotMatched)
     return conrefReuse, keyrefReuse, dictionaryTopics
 
 
-def extractClassificationData(directory,singleFile, cont,directoryPrefix, dictionaryTopics, conrefReuse, keyrefReuse):
+def extractClassificationData(directory,singleFile, cont,directoryPrefix, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, dictionaryOfElementsNotMatched):
 #directory of a particular book
 #singlefile is whether we want to extract all the text and put it in a single file or not
 #directoryPrefix is the directory where we want to write the results (it is created if it doesn't exist
@@ -79,7 +83,7 @@ def extractClassificationData(directory,singleFile, cont,directoryPrefix, dictio
     labelFileName = 'topicLabels' #Indicates topic type (one topic per row)
     idBookTopicFileName = 'idBookTopic' #Indicates id, book, topic name (one  per row)
     dataFileName = 'data' #text of all topics (Used in case singleFile is true)
-	
+
 	#set comment tags regular expression
     regexComments = re.compile(".*comment.*")
 
@@ -108,7 +112,9 @@ def extractClassificationData(directory,singleFile, cont,directoryPrefix, dictio
 
     for f in files:
 		#Pragmatic way of checking that is a dita file
-        if (len(f)>=5) and (f[-5:]=='.dita'):
+        #if (len(f)>=5) and (f[-5:]=='.dita'):
+        #Pragmatic way of checking that is an xml file
+        if ((len(f)>=4) and (f[-4:]=='.xml')):
 
 
             #check if not repeated update dictionary
@@ -117,49 +123,59 @@ def extractClassificationData(directory,singleFile, cont,directoryPrefix, dictio
                 dictionaryTopics[f] = cont
 
                 #extract topic name
-                topicName = f[0:-5]
+                #dita
+                #topicName = f[0:-5]
+                #xml
+                topicName = f[0:-4]
+                print topicName
 
                 #get the root of the topic xml
                 root = extractTopicTypeFromFile(directory + f)
 
-                #Append data to output files (labelFile, idBookTypeFile)
-                labelFile = open(directoryPrefix +labelFileName,'a')
-                labelFile.write(root.tag + '\n')
-                labelFile.close()
+                if (root.tag!='map') and (root.tag!='bookmap'):
 
-                idBookTypeFile = open(directoryPrefix +idBookTopicFileName,'a')
-                idBookTypeFile.write(str(cont) + ', ' + bookName + ', ' + topicName + '\n')
-                idBookTypeFile.close()
+                    #Append data to output files (labelFile, idBookTypeFile)
+                    labelFile = open(directoryPrefix +labelFileName,'a')
+                    labelFile.write(root.tag + '\n')
+                    labelFile.close()
 
-                #Get the text from the xml content
-                text = extractTextContentFromTree(root,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
-                if not(singleFile):
-                    #Content goes in separate files
-                    if not os.path.exists('./' + directoryPrefix + bookName):
-                        #Check if book directory has been created
-                        os.makedirs('./' + directoryPrefix + bookName)
-                    if not os.path.exists('./' + directoryPrefix + bookName + '/' + root.tag):
-                        #Check if topic type directory has been created
-                        os.makedirs('./' + directoryPrefix + bookName + '/' + root.tag)
-                    #dataFile = open('./' + root.tag + '/' + dataFileName + str(cont).zfill(4),'w')
-                    dataFile = open('./' + directoryPrefix + bookName + '/' + root.tag + '/' + topicName,'w')
+                    idBookTypeFile = open(directoryPrefix +idBookTopicFileName,'a')
+                    idBookTypeFile.write(str(cont) + ', ' + bookName + ', ' + topicName + '\n')
+                    idBookTypeFile.close()
+
+                    #Get the text from the xml content
+                    text = extractTextContentFromTree(root,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse,regexComments, dictionaryOfElementsNotMatched)
+                    if not(singleFile):
+                        #Content goes in separate files
+                        if not os.path.exists('./' + directoryPrefix + bookName):
+                            #Check if book directory has been created
+                            os.makedirs('./' + directoryPrefix + bookName)
+                        if not os.path.exists('./' + directoryPrefix + bookName + '/' + root.tag):
+                            #Check if topic type directory has been created
+                            os.makedirs('./' + directoryPrefix + bookName + '/' + root.tag)
+                            print './' + directoryPrefix + bookName + '/' + root.tag
+                        #dataFile = open('./' + root.tag + '/' + dataFileName + str(cont).zfill(4),'w')
+                        dataFile = open('./' + directoryPrefix + bookName + '/' + root.tag + '/' + topicName,'w')
+                    else:
+                        #content goes in a same file (Not mantained)
+                        if not os.path.exists(root.tag):
+                            os.makedirs(root.tag)
+                        dataFile = open('./' + root.tag + '/' + dataFileName,'a')
+
+                    if not(singleFile):
+                        dataFile.write(text)
+                    else:
+                        dataFile.write(text + '\n*****\n')
+                    dataFile.close()
+
+                    cont = cont + 1
                 else:
-                    #content goes in a same file (Not mantained)
-                    if not os.path.exists(root.tag):
-                        os.makedirs(root.tag)
-                    dataFile = open('./' + root.tag + '/' + dataFileName,'a')
+                    print "Skipping map file"
 
-                if not(singleFile):
-                    dataFile.write(text)
-                else:
-                    dataFile.write(text + '\n*****\n')
-                dataFile.close()
-
-                cont = cont + 1
     return cont
 
 
-def extractTextContentFromTree(root,directory, cont, dictionaryTopics,  conrefReuse, keyrefReuse, regexComments):
+def extractTextContentFromTree(root,directory, cont, dictionaryTopics,  conrefReuse, keyrefReuse, topicrefReuse, regexComments, dictionaryOfElementsNotMatched):
     #f = open(filePath,'r')
     #tree = ET.parse(filePath)
     #root = tree.getroot()
@@ -182,23 +198,32 @@ def extractTextContentFromTree(root,directory, cont, dictionaryTopics,  conrefRe
 ##            text = text + ET.tostring(node,encoding = 'UTF-8', method='text')
 
         if node.tag=='title':
-            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
-        if node.tag=='shortdesc':
-            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
-        if node.tag=='conbody':
-            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
-        if node.tag=='taskbody':
-            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
-        if node.tag=='refbody':
-            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
-        if node.tag=='body':
-            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
+            text = text + '<p>' + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
+        elif node.tag=='shortdesc':
+            text = text + '<p>' + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
+        elif node.tag=='conbody':
+            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
+        elif node.tag=='structbody':
+            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
+        elif node.tag=='taskbody':
+            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
+        elif node.tag=='refbody':
+            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
+        elif node.tag=='body':
+            text = text + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
+        elif node.tag=='abstract': #this is for reference type, not sure if it is very useful
+            text = text + '<p>' + printXMLwithParagraph(node,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
+        else:
+            if dictionaryOfElementsNotMatched.has_key(node.tag):
+                dictionaryOfElementsNotMatched[node.tag] = dictionaryOfElementsNotMatched[node.tag] + 1
+            else:
+                dictionaryOfElementsNotMatched[node.tag] = 1
 
 
     #text = text.replace('\t','')
     return text
 
-def printXMLwithParagraph(nodeInit,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments):
+def printXMLwithParagraph(nodeInit,directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments):
     #pdb.set_trace()
     text = ''
     tree=nodeInit.findall('./*')
@@ -225,7 +250,18 @@ def printXMLwithParagraph(nodeInit,directory, cont, dictionaryTopics, conrefReus
                 #check if there is a conref reuse case
                 conrefURI = node.attrib['conref'].split('#')
                 reusedNode = getConrefReuse(conrefURI[0],conrefURI[1], directory)
-                text = text + '<p>' + printXMLwithParagraph(reusedNode, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments) + '</p>'
+                #print reusedNode
+                text = text + '<p>' + printXMLwithParagraph(reusedNode, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
+
+                #add entry to the dictionary to be used as ground truth
+                conrefReuse[cont] = conrefURI[0]
+                #print node.tag #wondering what tags are used for reuse?
+            elif node.attrib.has_key('topicref'):
+                #check if there is a conref reuse case
+                conrefURI = node.attrib['conref'].split('#')
+                reusedNode = getConrefReuse(conrefURI[0],conrefURI[1], directory)
+                print reusedNode
+                text = text + '<p>' + printXMLwithParagraph(reusedNode, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
 
                 #add entry to the dictionary to be used as ground truth
                 conrefReuse[cont] = conrefURI[0]
@@ -233,24 +269,35 @@ def printXMLwithParagraph(nodeInit,directory, cont, dictionaryTopics, conrefReus
             else:
                 if (node.tag == 'p') or (node.tag == 'li') or (node.tag == 'step'):
                 #these tags are used to split in "paragraphs" we call paragraphs anything that can be reused
-                        text = text + '<p>' + printXMLwithParagraph(node, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments) + '</p>'
+                        text = text + '<p>' + printXMLwithParagraph(node, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
                 else:
                     if node.tag == 'keyword':
-                    #keyref reuse case
-                        #pdb.set_trace()
-                        keyref = node.attrib['keyref']
-                        keyword = getKeyRef(keyref, directory)
-                        text = text + " " + keyword + printXMLwithParagraph(node, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
+                        if node.attrib.has_key('keyref'):
+                            #keyref reuse case
+                            #pdb.set_trace()
+                            keyref = node.attrib['keyref']
+                            keyword = getKeyRef(keyref, directory)
+                            text = text + " " + keyword + printXMLwithParagraph(node, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
 
-                        #add entry to the dictionary to be used as ground truth
-                        if not(keyrefReuse.has_key(cont)):
-                            keyrefReuse[cont] = [keyword]
-                        else:
-                            keyrefReuse[cont].append(keyword)
+                            #add entry to the dictionary to be used as ground truth
+                            if not(keyrefReuse.has_key(cont)):
+                                keyrefReuse[cont] = [keyword]
+                            else:
+                                keyrefReuse[cont].append(keyword)
+                        elif node.attrib.has_key('conref'):
+                            conrefURI = node.attrib['conref'].split('#')
+                            reusedNode = getConrefReuse(conrefURI[0],conrefURI[1], directory)
+                            #print reusedNode
+                            text = text + '<p>' + printXMLwithParagraph(reusedNode, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments) + '</p>'
+
+                            #add entry to the dictionary to be used as ground truth
+                            conrefReuse[cont] = conrefURI[0]
+                            #print node.tag #wondering what tags are used for reuse?
+
                     elif regexComments.match(node.tag):
                         pass
                     else:
-                        text = text + printXMLwithParagraph(node, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, regexComments)
+                        text = text + printXMLwithParagraph(node, directory, cont, dictionaryTopics, conrefReuse, keyrefReuse, topicrefReuse, regexComments)
 
     return text
 
@@ -263,9 +310,13 @@ def extractTopicTypeFromFile(filePath):
 
 def getConrefReuse(fileName,idValue,directory):
     node = extractTopicTypeFromFile(directory+fileName)
+
     #pdb.set_trace()
     #select the element (at any level) that has the given id
-    return node.find('.//*[@id="'+idValue+'"]')
+    #This works for CORDAP
+    #return node.find('.//*[@id="'+idValue+'"]')
+    #This works for VSP4000
+    return node.find('.//*[@id="'+idValue.split("/")[1]+'"]')
 
 def getKeyRef(keyref, directory):
     files = os.listdir(directory)

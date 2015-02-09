@@ -5,3 +5,6 @@ ditaParser.extractClassificationData('../NewData/AVAYA_VSP_9000_DITA/',False,0,'
 ditaParser.extractClassificationData('../Data/CORDAP Reviewer/',False,0,'Data Reviewer_/')
 
 aaa=ditaParser.extractClassificationDataAllDirs('../CORDAP/',False,'CORDAP_processed/')
+
+aaa=ditaParser.extractClassificationDataAllDirs('../BeforeAfter/VSP4000_before/',False,'VSP4000_before/')
+
